@@ -42,6 +42,9 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from services.qwen_stt import QwenSTTService
 from services.pocket_tts_service import PocketTTSService
 
+from aiohttp import web
+import aiohttp_cors
+
 load_dotenv()
 
 # ─── Configuration ─────────────────────────────────────
@@ -166,26 +169,59 @@ if __name__ == "__main__":
         # Setup the WebRTC connection handler
         connection = SmallWebRTCConnection()
         
-        # Start the bot for the browser to connect to
-        # In this version, we run the bot function when a client connects via WebRTC
-        # connection.run() is typically used or manually handling the signaling.
-        # For a simple local setup, we can use the connection's built-in HTTP server if available.
-        try:
-            from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler
-            from aiohttp import web
+        # Web Server Handlers
+        async def handle_index(request):
+            return web.FileResponse(os.path.join("static", "index.html"))
+
+        async def handle_offer(request):
+            data = await request.json()
+            # Initialize with offer from browser
+            await connection.initialize(sdp=data["sdp"], type=data["type"])
+            # Get response answer
+            answer = connection.get_answer()
+            if not answer:
+                return web.json_response({"error": "Failed to get answer"}, status=500)
             
-            async def handle_bot(request):
-                # This is a simplified version of what LocalRunner does
-                # It handles the /offer or /connect endpoint
-                pass # The transport usually handles this via the connection
-                
-            logger.info("🚀 Server starting at http://localhost:7860")
-            # For now, let's keep it simple: Pipecat's SmallWebRTC often 
-            # exposes a way to run a task on connection.
-            # We will use the direct connection run if it exists.
-            await bot(connection)
-        except Exception as e:
-            logger.error(f"Startup error: {e}")
+            # Start the bot task asynchronously for this connection
+            asyncio.create_task(bot(connection))
+            
+            return web.json_response(answer)
+
+        # Setup Aiohttp App
+        app = web.Application()
+        
+        # Enable CORS
+        cors = aiohttp_cors.setup(app, defaults={
+            "*": aiohttp_cors.ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*",
+            )
+        })
+
+        app.router.add_get("/", handle_index)
+        app.router.add_post("/offer", handle_offer)
+        
+        for route in list(app.router.routes()):
+            cors.add(route)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "localhost", 7860)
+        
+        logger.info("=" * 60)
+        logger.info("🎙️  Local Voice Agent Started")
+        logger.info("🚀 Server: http://localhost:7860")
+        logger.info("=" * 60)
+        
+        await site.start()
+        
+        # Keep the server running
+        while True:
+            await asyncio.sleep(3600)
 
     import asyncio
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

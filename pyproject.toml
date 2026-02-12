@@ -8,4 +8,6 @@ dependencies = [
     "qwen-asr",
     "pocket-tts",
     "python-dotenv",
+    "aiohttp",
+    "aiohttp-cors",
 ]
