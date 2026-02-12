@@ -7,7 +7,7 @@ Uses the pocket-tts package for local, CPU-only text-to-speech.
 
 import asyncio
 import struct
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import numpy as np
 from loguru import logger
@@ -21,7 +21,7 @@ from pipecat.frames.frames import (
     TTSStartedFrame,
     TTSStoppedFrame,
 )
-from pipecat.services.tts import TTSService
+from pipecat.services.tts_service import TTSService
 
 
 class PocketTTSService(TTSService):

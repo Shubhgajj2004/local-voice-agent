@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Real-time local voice agent using Pipecat, Qwen3-ASR, Gemini, and PocketTTS"
 requires-python = ">=3.10"
 dependencies = [
-    "pipecat-ai[google,silero,smallwebrtc,local-smart-turn-v3]",
+    "pipecat-ai[google,silero,webrtc,runner,local-smart-turn-v3]",
     "qwen-asr",
     "pocket-tts",
     "python-dotenv",

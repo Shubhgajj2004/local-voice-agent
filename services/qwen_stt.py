@@ -8,7 +8,7 @@ The model runs on GPU (CUDA) for fast inference, or falls back to CPU.
 import asyncio
 import io
 import struct
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import numpy as np
 import torch
@@ -21,7 +21,7 @@ from pipecat.frames.frames import (
     Frame,
     TranscriptionFrame,
 )
-from pipecat.services.stt import STTService
+from pipecat.services.stt_service import STTService
 
 
 class QwenSTTService(STTService):
