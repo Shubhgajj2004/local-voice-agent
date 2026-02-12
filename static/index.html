@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Voice Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Ambient background glow */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .container {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #f0f0f0;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 3rem;
+        }
+
+        /* Mic button */
+        .mic-btn {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 2px solid rgba(99, 102, 241, 0.3);
+            background: rgba(99, 102, 241, 0.08);
+            color: #818cf8;
+            font-size: 2.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 2rem;
+        }
+
+        .mic-btn:hover {
+            border-color: rgba(99, 102, 241, 0.6);
+            background: rgba(99, 102, 241, 0.15);
+            transform: scale(1.05);
+        }
+
+        .mic-btn.active {
+            border-color: #6366f1;
+            background: rgba(99, 102, 241, 0.2);
+            animation: pulse 2s infinite;
+        }
+
+        .mic-btn.active::after {
+            content: '';
+            position: absolute;
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            animation: ring 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.3);
+            }
+
+            50% {
+                box-shadow: 0 0 30px 10px rgba(99, 102, 241, 0.1);
+            }
+        }
+
+        @keyframes ring {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(1.3);
+                opacity: 0;
+            }
+        }
+
+        /* Status */
+        .status {
+            font-size: 0.8rem;
+            color: #555;
+            margin-bottom: 1.5rem;
+            min-height: 1.2rem;
+        }
+
+        .status.connected {
+            color: #34d399;
+        }
+
+        .status.error {
+            color: #f87171;
+        }
+
+        /* Stack info */
+        .stack {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .stack span {
+            font-size: 0.65rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 100px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎙️ Local Voice Agent</h1>
+        <p class="subtitle">Speak naturally — AI responds in real-time</p>
+
+        <button class="mic-btn" id="micBtn" onclick="toggleConnection()">🎤</button>
+
+        <p class="status" id="status">Click the mic to start</p>
+
+        <div class="stack">
+            <span>Qwen3-ASR</span>
+            <span>Gemini</span>
+            <span>PocketTTS</span>
+            <span>Smart Turn v3</span>
+        </div>
+    </div>
+
+    <script>
+        let pc = null;          // RTCPeerConnection
+        let isConnected = false;
+        const statusEl = document.getElementById('status');
+        const micBtn = document.getElementById('micBtn');
+
+        function setStatus(text, className = '') {
+            statusEl.textContent = text;
+            statusEl.className = 'status ' + className;
+        }
+
+        async function toggleConnection() {
+            if (isConnected) {
+                disconnect();
+            } else {
+                await connect();
+            }
+        }
+
+        async function connect() {
+            try {
+                setStatus('Connecting...');
+
+                // Get microphone access
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    }
+                });
+
+                // Create peer connection
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                // Add mic track
+                stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+                // Handle remote audio (agent response)
+                pc.ontrack = (event) => {
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.play().catch(() => { });
+                };
+
+                // Create and send offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                // Wait for ICE gathering
+                await new Promise((resolve) => {
+                    if (pc.iceGatheringState === 'complete') {
+                        resolve();
+                    } else {
+                        pc.addEventListener('icegatheringstatechange', () => {
+                            if (pc.iceGatheringState === 'complete') resolve();
+                        });
+                        // Timeout after 5s
+                        setTimeout(resolve, 5000);
+                    }
+                });
+
+                // Send offer to Pipecat server
+                const response = await fetch('/offer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sdp: pc.localDescription.sdp,
+                        type: pc.localDescription.type,
+                    }),
+                });
+
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+                const answer = await response.json();
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+
+                pc.onconnectionstatechange = () => {
+                    if (pc.connectionState === 'connected') {
+                        setStatus('🟢 Connected — speak now', 'connected');
+                        micBtn.classList.add('active');
+                        isConnected = true;
+                    } else if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+                        disconnect();
+                    }
+                };
+
+                // If already connected
+                if (pc.connectionState === 'connected') {
+                    setStatus('🟢 Connected — speak now', 'connected');
+                    micBtn.classList.add('active');
+                    isConnected = true;
+                }
+
+            } catch (err) {
+                console.error('Connection error:', err);
+                setStatus(`Error: ${err.message}`, 'error');
+                disconnect();
+            }
+        }
+
+        function disconnect() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            isConnected = false;
+            micBtn.classList.remove('active');
+            setStatus('Click the mic to start');
+        }
+    </script>
+</body>
+
+</html>
