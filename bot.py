@@ -23,6 +23,7 @@ from loguru import logger
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.processors.audio.vad_processor import VADProcessor
 
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -103,9 +104,12 @@ async def bot(webrtc_connection):
     ]
     context = LLMContext(messages)
 
-    # ── Smart Turn v3 + Silero VAD ──
-    # Silero detects silence (200ms threshold), then Smart Turn ML model
-    # decides if the user is truly done speaking or just pausing.
+    # ── VAD (Silero) ──
+    # We use VADProcessor to actually process audio and produce VAD frames
+    vad = VADProcessor(vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)))
+
+    # ── Smart Turn v3 ──
+    # ML model that decides if the user is truly done speaking.
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
@@ -116,9 +120,6 @@ async def bot(webrtc_connection):
                     )
                 ]
             ),
-            vad_analyzer=SileroVADAnalyzer(
-                params=VADParams(stop_secs=0.2)
-            ),
         ),
     )
 
@@ -126,19 +127,28 @@ async def bot(webrtc_connection):
     # Data flows: mic → STT → context → LLM → TTS → speaker
     pipeline = Pipeline(
         [
-            transport.input(),      # Receive audio from browser (WebRTC)
-            stt,                    # Qwen3-ASR-0.6B (local STT)
-            user_aggregator,        # Smart Turn v3 + Silero VAD + context
-            llm,                    # Gemini (cloud LLM, streaming)
-            tts,                    # PocketTTS (local TTS, streaming)
-            transport.output(),     # Send audio to browser (WebRTC)
-            assistant_aggregator,   # Track assistant responses in context
+            transport.input(),      # Receive audio from browser
+            vad,                    # VAD detects speech/silence
+            stt,                    # STT transcribes based on VAD
+            user_aggregator,        # Smart Turn v3 + Aggregation
+            llm,                    # Gemini LLM
+            tts,                    # PocketTTS
+            assistant_aggregator,   # Track context
+            transport.output(),     # Audio to browser
         ]
     )
 
     # ── Run ──
     task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
     runner = PipelineRunner()
+
+    @llm.event_handler("on_user_transcript")
+    async def on_user_transcript(llm, transcript):
+        logger.info(f"🧠 LLM Transcript: {transcript}")
+
+    @llm.event_handler("on_llm_response_start")
+    async def on_llm_response_start(llm):
+        logger.info("🧠 LLM starting response...")
 
     @transport.event_handler("on_client_connected")
     async def on_connected(transport, client):
@@ -147,7 +157,10 @@ async def bot(webrtc_connection):
     @transport.event_handler("on_client_disconnected")
     async def on_disconnected(transport, client):
         logger.info("🔴 Client disconnected")
-        await task.cancel()
+        try:
+            await task.cancel()
+        except Exception:
+            pass
 
     await runner.run(task)
     logger.info("🤖 Voice agent session ended")

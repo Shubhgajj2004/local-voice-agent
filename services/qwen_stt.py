@@ -21,10 +21,11 @@ from pipecat.frames.frames import (
     Frame,
     TranscriptionFrame,
 )
-from pipecat.services.stt_service import STTService
+from pipecat.processors.frame_processor import FrameDirection
+from pipecat.services.stt_service import SegmentedSTTService, STTService
 
 
-class QwenSTTService(STTService):
+class QwenSTTService(SegmentedSTTService):
     """Speech-to-text service using Qwen3-ASR-0.6B running locally.
 
     The model is loaded once at initialization and reused for each utterance.
@@ -96,12 +97,18 @@ class QwenSTTService(STTService):
             yield ErrorFrame("Qwen STT model not loaded yet")
             return
 
-        if len(audio) < 3200:  # Less than 100ms of audio at 16kHz
+        if self.sample_rate != 16000:
+            logger.warning(
+                f"QwenSTT expects 16kHz audio, but receives {self.sample_rate}Hz. Transcription might be poor."
+            )
+
+        # SegmentedSTTService passes the full buffered audio here.
+        # We want at least 100ms of audio to avoid transcribing noise.
+        if len(audio) < 3200:
             return
 
         try:
             # Convert raw PCM bytes to numpy float32 array
-            # Pipecat sends 16-bit signed PCM, mono, at sample_rate (default 16kHz)
             audio_np = np.frombuffer(audio, dtype=np.int16).astype(np.float32) / 32768.0
             sample_rate = 16000  # Pipecat default
 
@@ -114,6 +121,8 @@ class QwenSTTService(STTService):
             )
 
             if result and result.strip():
+                # Print prominently for the user
+                print(f"\n[USER] {result}\n")
                 logger.info(f"📝 STT: {result}")
                 yield TranscriptionFrame(
                     text=result,
@@ -134,6 +143,9 @@ class QwenSTTService(STTService):
         if results and len(results) > 0:
             return results[0].text
         return ""
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
 
     async def cancel(self, frame: CancelFrame):
         await super().cancel(frame)

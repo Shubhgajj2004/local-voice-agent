@@ -69,7 +69,7 @@ class PocketTTSService(TTSService):
             return self._model.sample_rate
         return 24000  # PocketTTS default until model is loaded
 
-    async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
+    async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame, None]:
         """Generate speech from text using PocketTTS streaming API.
 
         Args:
@@ -87,7 +87,7 @@ class PocketTTSService(TTSService):
 
         logger.info(f"🔊 TTS: {text[:80]}{'...' if len(text) > 80 else ''}")
 
-        yield TTSStartedFrame()
+        yield TTSStartedFrame(context_id=context_id)
 
         try:
             # Try streaming first, fall back to non-streaming
@@ -100,6 +100,7 @@ class PocketTTSService(TTSService):
                             audio=chunk_bytes,
                             sample_rate=self.sample_rate,
                             num_channels=1,
+                            context_id=context_id,
                         )
                         chunks_yielded += 1
             except AttributeError:
@@ -117,6 +118,7 @@ class PocketTTSService(TTSService):
                             audio=chunk,
                             sample_rate=self.sample_rate,
                             num_channels=1,
+                            context_id=context_id,
                         )
                         chunks_yielded += 1
 
@@ -126,7 +128,7 @@ class PocketTTSService(TTSService):
             logger.error(f"TTS error: {e}")
             yield ErrorFrame(f"TTS error: {str(e)}")
 
-        yield TTSStoppedFrame()
+        yield TTSStoppedFrame(context_id=context_id)
 
     async def _generate_stream(self, text: str) -> AsyncGenerator[bytes, None]:
         """Wrap PocketTTS streaming in an async generator."""
