@@ -33,6 +33,9 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
+
+from services.openclaw_tool import openclaw_run
 
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
@@ -42,6 +45,7 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 from services.qwen_stt import QwenSTTService
 from services.pocket_tts_service import PocketTTSService
+from services.context_store import ContextStoreProcessor, load_history
 
 from aiohttp import web
 import aiohttp_cors
@@ -54,11 +58,16 @@ if not GOOGLE_API_KEY:
     logger.error("GOOGLE_API_KEY not set. Copy .env.example to .env and add your key.")
     sys.exit(1)
 
-SYSTEM_PROMPT = """You are a helpful, friendly, and concise voice assistant. 
+SYSTEM_PROMPT = """You are a helpful, friendly, and concise voice assistant.
 Keep your responses short and conversational — typically 1-3 sentences.
 You are talking to a user through a microphone, so be natural and engaging.
 Do not use markdown formatting, bullet points, or numbered lists in your responses.
-Just speak naturally as you would in a conversation."""
+Just speak naturally as you would in a conversation.
+
+You have a tool called openclaw_run for actions or information that require
+real-world access (emails, files, web, device tasks, account data). Use it
+whenever the user asks for something you cannot do directly.
+"""
 
 
 # ─── Bot Entry Point (called by Pipecat runner) ───────
@@ -92,6 +101,8 @@ async def bot(webrtc_connection):
         api_key=GOOGLE_API_KEY,
         model="gemini-2.0-flash",
     )
+    # Register OpenClaw tool (non-blocking; continues even if user interrupts)
+    llm.register_direct_function(openclaw_run, cancel_on_interruption=False)
 
     # ── TTS (PocketTTS — local, CPU, streaming) ──
     tts = PocketTTSService(
@@ -99,10 +110,14 @@ async def bot(webrtc_connection):
     )
 
     # ── Conversation Context ──
+    history_path = os.path.join(os.path.dirname(__file__), ".data", "conversation.json")
+    history = load_history(history_path, max_messages=20)  # ~10 turns
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
+        *history,
     ]
-    context = LLMContext(messages)
+    tools = ToolsSchema(standard_tools=[openclaw_run])
+    context = LLMContext(messages, tools=tools)
 
     # ── VAD (Silero) ──
     # We use VADProcessor to actually process audio and produce VAD frames
@@ -125,6 +140,9 @@ async def bot(webrtc_connection):
 
     # ── Pipeline Assembly ──
     # Data flows: mic → STT → context → LLM → TTS → speaker
+    # Persist conversation history after each assistant response
+    context_store = ContextStoreProcessor(context, history_path, max_messages=20)
+
     pipeline = Pipeline(
         [
             transport.input(),      # Receive audio from browser
@@ -133,8 +151,9 @@ async def bot(webrtc_connection):
             user_aggregator,        # Smart Turn v3 + Aggregation
             llm,                    # Gemini LLM
             tts,                    # PocketTTS
-            assistant_aggregator,   # Track context
             transport.output(),     # Audio to browser
+            assistant_aggregator,   # Track context (must be after output)
+            context_store,          # Persist last ~10 turns
         ]
     )
 

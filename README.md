@@ -12,7 +12,12 @@ Real-time local voice agent orchestrated by **Pipecat**.
 2. **Configure environment**:
    Create `.env` with your `GOOGLE_API_KEY`.
 
-3. **Run**:
+3. **Pre-download models (recommended)**:
+   ```bash
+   uv run python prepare_models.py
+   ```
+
+4. **Run**:
    ```bash
    uv run python bot.py
    ```
