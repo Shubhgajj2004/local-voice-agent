@@ -1,0 +1,81 @@
+[
+  {
+    "role": "user",
+    "content": "hello。"
+  },
+  {
+    "role": "assistant",
+    "content": "Hi there! How can I help you today?"
+  },
+  {
+    "role": "user",
+    "content": "Who is the Prime Minister of India?"
+  },
+  {
+    "role": "assistant",
+    "content": "I do not have access to real-time information, including who the current Prime Minister of India is. However, I can use OpenClaw to find this information for you. Would you like me to do that?"
+  },
+  {
+    "role": "user",
+    "content": "Yes, please."
+  },
+  {
+    "role": "assistant",
+    "tool_calls": [
+      {
+        "id": "15c8e020-4611-46e3-857d-db5e81c33464",
+        "function": {
+          "name": "openclaw_run",
+          "arguments": "{\"task\": \"Who is the Prime Minister of India?\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": "Working on that. The Prime Minister of India is Narendra Modi."
+  },
+  {
+    "role": "user",
+    "content": "And when he was born."
+  },
+  {
+    "role": "assistant",
+    "tool_calls": [
+      {
+        "id": "4488f56e-8e1d-4fed-b699-1ce6dde61503",
+        "function": {
+          "name": "openclaw_run",
+          "arguments": "{\"task\": \"When was Narendra Modi born?\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": "Working on that. Narendra Modi was born on 17 September 1950."
+  },
+  {
+    "role": "user",
+    "content": "What did he do?"
+  },
+  {
+    "role": "assistant",
+    "tool_calls": [
+      {
+        "id": "f70ff0e9-6f64-489c-8c93-6308f9760db1",
+        "function": {
+          "name": "openclaw_run",
+          "arguments": "{\"task\": \"What did Narendra Modi do?\"}"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": "Working on that. Okay, I can look into that for you. Could you be more specific? Are you asking about his current role, his career history, or a specific action or policy?"
+  }
+]

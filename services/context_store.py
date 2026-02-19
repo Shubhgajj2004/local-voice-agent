@@ -8,7 +8,7 @@ import os
 from typing import List, Dict, Any
 
 from loguru import logger
-from pipecat.frames.frames import Frame, LLMFullResponseEndFrame
+from pipecat.frames.frames import Frame, LLMContextFrame
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 
 
@@ -40,17 +40,21 @@ class ContextStoreProcessor(FrameProcessor):
         self._context = context
         self._path = path
         self._max_messages = max_messages
+        self._last_saved_len = -1
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
 
-        # Persist after each assistant response completes
-        if isinstance(frame, LLMFullResponseEndFrame):
+        # Persist when context is updated by aggregators (user/assistant/tool turns).
+        if isinstance(frame, LLMContextFrame):
             # Skip system messages; persist only user/assistant turns
             msgs = [
                 m for m in self._context.messages
                 if m.get("role") in ("user", "assistant")
             ]
-            save_history(self._path, msgs, self._max_messages)
+            # Avoid repeated writes for the same context snapshot.
+            if len(msgs) != self._last_saved_len:
+                save_history(self._path, msgs, self._max_messages)
+                self._last_saved_len = len(msgs)
 
         await self.push_frame(frame, direction)
